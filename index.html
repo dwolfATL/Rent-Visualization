@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<!-- Created by Daniel Wolf July 2015 for Udacity Data Analyst Nanodegree -->
+<!-- References used: -->
+<!-- Loading US state map adapted from: http://bl.ocks.org/mbostock/4090848 -->
+<!-- Legend adapted from: http://bl.ocks.org/mbostock/4573883 -->
+<!-- Hover function adapted from: http://bl.ocks.org/KoGor/5685876 -->
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.19/topojson.min.js"></script>
+  <style>
+    h2 {
+      text-align: center;
+      font-size:30px;
+      width:960px
+    }
+    svg {
+      font: 10px sans-serif;
+    }
+    .div_rent {
+      clear:both;
+      font-size:18px;
+      text-align: center;
+      width:278px;
+      margin-left:340px;
+      margin-top:10px;
+      margin-bottom:10px;
+    }
+    .div_2010 {
+      display:inline-block;
+      font-size:24px;
+      width:80px;
+      text-align:center;
+      margin-left:240px;
+      color:"red";
+      cursor: pointer;
+    }
+    .div_years {
+      display:inline-block;
+      font-size:24px;
+      width:80px;
+      text-align:center;
+      cursor: pointer;
+    }
+    .caption {
+      font-weight: bold;
+    }
+    .key path {
+      display: none;
+    }
+    .key line {
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }
+    div.tooltip {   
+      position: absolute;
+      text-align: center;
+      width: 75px;
+      height: 35px;
+      padding: 2px;
+      font-size: 14px;
+      background: #FFFFE0;
+      border: 1px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+  </style>
+  <script type="text/javascript">
+    // Draw function initially called with US.json map file
+    function draw(error, us) {
+      if (error) throw error;
+      
+      // Color function initially called with State Rents CSV data
+      function color_states(data) {
+        
+        // Set up variables with years and average rents
+        var years    = [2010,2011,2012,2013,2014,2015];
+        var rentsByYear = { 2010: 2500,
+                            2011: 2250,
+                            2012: 2750,
+                            2013: 3000,
+                            2014: 3500,
+                            2015: 3300
+                          };
+        
+        // Set up and populate dictionary with rent for each state for each year
+        var rentsByStateYear = { 2010: [],
+                                 2011: [],
+                                 2012: [],
+                                 2013: [],
+                                 2014: [],
+                                 2015: []
+                               };
+        for (var j = 0; j < years.length; j++) {
+          data.forEach(function(d) {
+            rentsByStateYear[years[j]][d.id] = +d[years[j]];
+          });
+        }
+        
+        // Set up and populate dictionary with state abbr for each state ID
+        var statesByID = [];
+        data.forEach(function(d) {
+          statesByID[d.id] = d.state;
+        });
+        
+        // Set up variables for height and width of SVG
+        var width = 960,
+            height = 460;
+        
+        // Create threshold scale for heat map
+        var threshold = d3.scale.threshold()
+          .domain([0,500, 1000, 1500, 2000, 2500, 3000, 3500, 4000])
+          .range(["#F7FBFF","#DEEBF7","#C6DBEF","#9ECAE1","#6BAED6","#4292C6",
+                  "#2171B5","#08519C","#08306B"]);
+        
+        // Append title for the animation
+        d3.select("body").append("h2")
+          .text("Monthly Rent Cost by Year: Animation & Interaction")
+          .style("font-family", "arial")
+          .style("color", "#646464");
+        
+        // Append a wrapper to hold the year buttons and National Average
+        d3.select("body").append("wrapper").attr("class", "wrapper");
+        
+        // Add the year buttons
+        var buttons = d3.select("wrapper").append("div")
+          .style("background-color", "white")
+          .selectAll("div")
+          .data(years)
+          .enter()
+          .append("div")
+          // Label each year button with a class for that year
+          // Need to differentiate between 2010 and other years for formatting
+          .attr("class", function(d) { if (d === 2010) return "div_" + d;
+                                       else return "div_years div_" + d; })
+          .text(function(d) { return d; })
+          .style("background-color", "white")
+          .style("color", "#646464")
+          .style("font-family","arial");
+        
+        // Add the National Average box
+		d3.select("wrapper").append("div")
+		  .attr("class", "div_rent")
+		  .text("National Average: ")
+		  .style("color", "#646464")
+		  .style("background-color", "white")
+		  .style("font-family","arial");
+        
+        // Initialize projection and path for US state map
+        var projection = d3.geo.albersUsa()
+          .scale(1000)
+          .translate([width / 2, height / 2]);
+        var path = d3.geo.path()
+          .projection(projection);
+        
+        // Create hover variable for the hover element (set to transparent)
+        var hover = d3.select("body").append("div")
+          .attr("class", "tooltip")
+          .style("opacity", 0);
+        
+        // Initialize SVG variable
+        var svg = d3.select("body").append("svg")
+          .attr("width", width)
+          .attr("height", height);
+        
+        // Add state lines to the map
+        svg.append("g")
+          .attr("class", "states")
+          .selectAll("path")
+          .data(topojson.feature(us, us.objects.states).features)
+          .enter()
+          .append("path")
+          .style("stroke", "black")
+          .style("fill", "#F7FBFF")
+          .attr("d", path)
+        
+        // ADD LEGEND -----------------------------------------------------
+        // Formatting guide: https://github.com/mbostock/d3/wiki/Formatting
+        var formatCurrency = d3.format("$,.0f"),
+            formatPercent = d3.format(".1%");
+        
+        // Create a linear scale for the legend
+        var x = d3.scale.linear().domain([0, 4000]).range([0, 360]);
+        
+        // Create an axis for the legend
+        var xAxis = d3.svg.axis()
+          .scale(x)
+          .orient("bottom")
+          .tickSize(13)
+          .tickValues(threshold.domain())
+          .tickFormat(function(d) { return formatCurrency(d); });
+        
+        // Append an object to hold the legend
+        var g = svg.append("g")
+          .attr("class", "key")
+          .attr("transform", "translate(" + (width - 360) / 2 + "," + 0 + ")");
+        
+        // Initialize the legend
+        g.selectAll("rect")
+          .data(threshold.range().map(function(color) {
+                  var d = threshold.invertExtent(color);
+                  if (d[0] == null) d[0] = x.domain()[0];
+                  if (d[1] == null) d[1] = x.domain()[1];
+                  return d; }))
+          .enter()
+          .append("rect")
+          .attr("height", 8)
+          .attr("x", function(d) { return x(d[0]); })
+          .attr("width", function(d) { return x(d[1]) - x(d[0]); })
+          .style("fill", function(d) { return threshold(d[0]); });
+        
+        // Add the axis to the legend
+        g.call(xAxis);
+        
+        // FUNCTION: Update map for each year in animation and interaction
+        function update_year(year) {
+          
+          // Initialize variable to identify the correct year button
+          var div_class = "div.div_" + year;
+          
+          // Transition all year buttons to default colors
+          d3.selectAll("div")
+            .transition()
+            .duration(1000)
+            .style("color", "#646464")
+            .style("background-color", "white");
+          
+          // Highlight selected year button on the animation/interaction
+          d3.select(div_class)
+            .transition()
+            .delay(1000)
+            .style("color", "white")
+            // UPDATE: Tie year button background color to legend
+            .style("background-color", function(d) { 
+                                       return threshold(rentsByYear[year]); });
+          
+          // Change the national average to reflect the highlighted year
+          d3.select("div.div_rent")
+            .transition()
+            .delay(1000)
+            .duration(500)
+            .text("National Average: " + formatCurrency(rentsByYear[year]));
+          
+          // Transition all of the state colors based on threshold scale
+          svg.selectAll('path')
+             .transition()
+             .delay(1000)
+             .duration(500)
+             .style("stroke", "black")
+             .style("fill", function(d) { 
+                            return threshold(rentsByStateYear[year][d.id]); });
+        } // END UPDATE_YEAR FUNCTION
+        
+        // Initialize year variable for opening animation
+        var year_idx = 0;
+        
+        // APPLY SETINTERVAL TO CREATE OPENING ANIMATION
+        var year_interval = setInterval(function() {
+          
+          // Call the function to update the map based on the year
+          update_year(years[year_idx]);
+          
+          // Increment to the next year
+          year_idx++;
+          
+          // Transition to interaction when the year iteration is complete
+          if(year_idx >= years.length) {
+            
+            // Clear the setInterval now that the animation is complete
+            clearInterval(year_interval);
+            
+            // Finalize the animation with year 2015
+            svg.selectAll('path')
+               .transition()
+               .delay(1000)
+               .duration(500)
+               .style("stroke", "black")
+               .style("fill", function(d) { 
+                              return threshold(rentsByStateYear[2015][d.id]); });
+            
+            // Current year variable to control interactive elements
+            var current_year = 2015
+            
+            // Adding mouse hover effects to the states
+            svg.attr("class", "states")
+               .selectAll("path")
+               .on("mouseover", function(d) {
+                 // Change hover opacity to 1 on mouse over
+                 hover.transition()
+                      .duration(300)
+                      .style("opacity", 1);
+                 // Add hover text for state rent and YoY percentage increase
+                 // Differentiate hover text for 2010 since there is no YoY increase
+                 if (current_year === 2010) {
+                    hover.text(statesByID[d.id] + ": " + 
+                               formatCurrency(rentsByStateYear[current_year][d.id]))
+                         .style("left", (d3.event.pageX) + "px")
+                         .style("top", (d3.event.pageY -30) + "px");
+                 } else {
+                    hover.text(statesByID[d.id] + ": " + 
+                               formatCurrency(rentsByStateYear[current_year][d.id]) +
+                               "\n" + "YoY: " + 
+                               formatPercent((rentsByStateYear[current_year][d.id] -
+                                              rentsByStateYear[current_year-1][d.id]) /
+                                              rentsByStateYear[current_year-1][d.id]))
+                         .style("left", (d3.event.pageX) + "px")
+                         .style("top", (d3.event.pageY -30) + "px");
+                 }
+               })
+               .on("mouseout", function() {
+                 // Change hover opacity back to 0 on mouse out
+                 hover.transition()
+                      .duration(300)
+                      .style("opacity", 0);
+               })
+               
+            // Adding mouse click effects to the year buttons
+            buttons.on("click", function(d) {
+              // Update the year variable to the selected year
+              current_year = d;
+              // Transition the map to the selected year
+              update_year(d);
+            });
+          }
+        }, 4000); // END SETINTERVAL ANIMATION
+      }; // END COLOR_STATES FUNCTION
+      
+      // FIRST COMMAND ONCE DRAW FUNCTION IS CALLED WITH US.JSON
+      // CALL COLOR STATES FUNCTION USING THE STATE RENT CSV DATA
+      d3.csv("state-rent-cols.csv", function(d) {
+        d[2010] = +d[2010];
+        d[2011] = +d[2011];
+        d[2012] = +d[2012];
+        d[2013] = +d[2013];
+        d[2014] = +d[2014];
+        d[2015] = +d[2015];
+        return d;
+      }, color_states);
+    };
+  </script>
+</head>
+<body>
+  <script type="text/javascript">
+    // Initialize visualization by applying DRAW function to US state map data
+    d3.json("us.json", draw);
+  </script>
+</body>
+</html>
